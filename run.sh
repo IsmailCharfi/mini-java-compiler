@@ -7,3 +7,4 @@ bison -d parser.y
 gcc lex.yy.c parser.tab.c -o compiler
 mv compiler.exe ../compiler.exe
 cd ..
+python ./app.py
