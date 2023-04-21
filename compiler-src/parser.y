@@ -109,6 +109,7 @@ extern int line;
 %token  PLUS_PLUS
 %token  MINUS_MINUS
 %token  NOT
+%token SPREAD
 
 %%
 QUALIFIED_IDENTIFIER:           IDENTIFIER 
@@ -261,7 +262,7 @@ FORMARL_PARAMETERS:             OPENPARENT FORMARL_PARAMETER CLOSEPARENT;
 FORMARL_PARAMETER:              TYPE FORMARL_PARAMETER_REST
                                 |;
 
-FORMARL_PARAMETER_REST:         DOT DOT DOT VARIABLE_DECLARATOR_ID
+FORMARL_PARAMETER_REST:         SPREAD VARIABLE_DECLARATOR_ID
                                 | VARIABLE_DECLARATOR_ID
                                 | VARIABLE_DECLARATOR_ID COMMA FORMARL_PARAMETER;
 
@@ -281,6 +282,7 @@ EXPRESSION2:                    EXPRESSION3
 EXPRESSION3:                    PREFIX_OP EXPRESSION3
                                 | PAR_EXPRESSION EXPRESSION3
                                 | OPENPARENT TYPE CLOSEPARENT EXPRESSION3
+                                | EXPRESSION3 OPENSQRBRACK EXPRESSION CLOSESQRBRACK
                                 | PRIMARY SELECTORS POSTFIX_OPERATORS;
 
 ASSIGNMENT_OPERATOR:            ASSIGN
@@ -339,8 +341,8 @@ PRIMARY:                        LITERAL
                                 | IDENTIFIER_SEQUENCE
                                 | IDENTIFIER_SEQUENCE IDENTIFER_SUFFIX;
 
-IDENTIFIER_SEQUENCE:            IDENTIFIER 
-                                | IDENTIFIER DOT IDENTIFIER_SEQUENCE;
+IDENTIFIER_SEQUENCE:            IDENTIFIER DOT IDENTIFIER_SEQUENCE
+                                | IDENTIFIER;
 
 LITERAL:                        NUMBER
                                 | TYPED_STRING
@@ -361,7 +363,8 @@ SUPER_SUFFIX:                   ARGUMENTS
                                 | DOT IDENTIFIER ARGUMENTS;
 
 IDENTIFER_SUFFIX:               EXPRESSION
-                                | ARGUMENTS;
+                                | ARGUMENTS
+                                | POSTFIX_OP;
 
 
 SELECTOR:                       DOT IDENTIFIER ARGUMENTS
@@ -381,7 +384,7 @@ LOCAL_VARIABLE_DECLARATION_STATEMENT:  TYPE VARIABLE_DECLARATOR_LIST SEMICOLON;
 
 STATEMENT:                      OPENBRAC BLOCK CLOSEBRAC
                                 | SEMICOLON
-                                | EXPRESSION
+                                | EXPRESSION SEMICOLON
                                 | IF PAR_EXPRESSION STATEMENT
                                 | IF PAR_EXPRESSION STATEMENT ELSE STATEMENT
                                 | FOR OPENPARENT FOR_CONTROL CLOSEPARENT STATEMENT

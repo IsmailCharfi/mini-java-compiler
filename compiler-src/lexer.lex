@@ -17,7 +17,7 @@ figureNotNull                           [1-9]
 number                                  -?(0|{figureNotNull}{figure}*)|-?({figure}*\.{figure}+|{figure}+\.)([eE][+-]?{figure}+)?[fFdD]?
 letter                                  [a-zA-Z]
 identifier                              ({letter}|$|_)({letter}|_|{figure}|$)*
-illegalIdentifier                       ({figure})({letter}|_|{figure}|$)+
+illegalIdentifier                       {figure}+({letter}|_|$)+({letter}|_|$|{figure})*
 
 %%
 
@@ -85,6 +85,7 @@ illegalIdentifier                       ({figure})({letter}|_|{figure}|$)+
 "{"                                     { return OPENBRAC; }
 "}"                                     { return CLOSEBRAC; }
 ";"                                     { return SEMICOLON; }
+"..."                                   { return SPREAD; }
 "."                                     { return DOT; }
 ","                                     { return COMMA; }
 "=="                                    { return EQ; }
