@@ -117,9 +117,25 @@
      GT = 333,
      LE = 334,
      GE = 335,
-     COMMENT = 336,
-     COMMENT_LINE = 337,
-     TYPED_STRING = 338
+     TYPED_STRING = 336,
+     PLUS_ASSIGN = 337,
+     MINUS_ASSIGN = 338,
+     TIMES_ASSIGN = 339,
+     DIVIDE_ASSIGN = 340,
+     BITWISE_AND_ASSIGN = 341,
+     BITWISE_OR_ASSIGN = 342,
+     XOR_ASSIGN = 343,
+     MODULO_ASSIGN = 344,
+     AND = 345,
+     BITWISE_AND = 346,
+     OR = 347,
+     BITWISE_OR = 348,
+     XOR = 349,
+     TERNARY_IF = 350,
+     TERNARY_ELSE = 351,
+     PLUS_PLUS = 352,
+     MINUS_MINUS = 353,
+     NOT = 354
    };
 #endif
 

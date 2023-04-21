@@ -4,12 +4,12 @@
 #include <string.h>
 #include "parser.tab.h"
 
+int line = 1;
+
 void error(char *msg) {
-    fprintf(stderr, "Lexical error in line %d: %s: %s\n", yylineno, msg, yytext);
+    fprintf(stderr, "Lexical error in line %d: %s: %s\n", line, msg, yytext);
 }
 %}
-
-%option yylineno
 
 delim                                   ([\t]|" ")*
 figure                                  [0-9]
@@ -17,11 +17,11 @@ figureNotNull                           [1-9]
 number                                  -?(0|{figureNotNull}{figure}*)|-?({figure}*\.{figure}+|{figure}+\.)([eE][+-]?{figure}+)?[fFdD]?
 letter                                  [a-zA-Z]
 identifier                              ({letter}|$|_)({letter}|_|{figure}|$)*
-illegalIdentifier                       ({figure})({letter}|_|{figure}|$)*
+illegalIdentifier                       ({figure})({letter}|_|{figure}|$)+
 
 %%
 
-"\n"                                    ++yylineno;
+"\n"                                    line++;
 {delim}                                 /* do nothing */
 "const"                                 { return CONST; }
 "final"                                 { return FINAL; }
@@ -87,18 +87,36 @@ illegalIdentifier                       ({figure})({letter}|_|{figure}|$)*
 ";"                                     { return SEMICOLON; }
 "."                                     { return DOT; }
 ","                                     { return COMMA; }
-"+"                                     { return PLUS; }
-"-"                                     { return MINUS; }
-"*"                                     { return TIMES; }
-"/"                                     { return DIVIDE; }
-"%"                                     { return MODULO; }
-"="                                     { return ASSIGN; }
 "=="                                    { return EQ; }
 "!="                                    { return NEQ; }
 "<"                                     { return LT; }
 ">"                                     { return GT; }
 "<="                                    { return LE; }
 ">="                                    { return GE; }
+"+="                                    { return PLUS_ASSIGN; }
+"-="                                    { return MINUS_ASSIGN; }
+"*="                                    { return TIMES_ASSIGN; }
+"/="                                    { return DIVIDE_ASSIGN; }
+"&="                                    { return BITWISE_AND_ASSIGN; }
+"|="                                    { return BITWISE_OR_ASSIGN; }
+"^="                                    { return XOR_ASSIGN; }
+"%="                                    { return MODULO_ASSIGN; }
+"++"                                    { return PLUS_PLUS; }
+"--"                                    { return MINUS_MINUS; }
+"!"                                     { return NOT; } 
+"+"                                     { return PLUS; }
+"-"                                     { return MINUS; }
+"*"                                     { return TIMES; }
+"/"                                     { return DIVIDE; }
+"%"                                     { return MODULO; }
+"="                                     { return ASSIGN; }
+"&&"                                    { return AND; }
+"&"                                     { return BITWISE_AND; }
+"||"                                    { return OR; }
+"|"                                     { return BITWISE_OR; }
+"^"                                     { return XOR; }
+"?"                                     { return TERNARY_IF; }
+":"                                     { return TERNARY_ELSE; }
 "/*"                                    {
                                              int insideComment = 1;
                                              while(insideComment) {
@@ -107,23 +125,22 @@ illegalIdentifier                       ({figure})({letter}|_|{figure}|$)*
                                                        char ch = input();
                                                        if(ch == '/') {
                                                        insideComment = 0;
-                                                       return COMMENT;
                                                        }
                                                        else unput(ch);
                                                   }
-                                                  else if(c == '\n') yylineno++;
+                                                  else if(c == '\n') line++;
                                                   else if(c == EOF) {
-                                                       error("Error comment not closed");
+                                                       error("Comment not closed");
                                                        insideComment = 0;
                                                   }
                                              }
                                         }
-"//"                                   { while (input() != '\n'){} return COMMENT_LINE;}
+"//"                                   { while (input() != '\n'){} line++;}
 "\""                                   {while (input() != '"'){} return TYPED_STRING; }
 {illegalIdentifier}                    { error("Illegal identifier"); yyterminate();}
 {identifier}                           { return IDENTIFIER; }
 {number}                               { return NUMBER; }
-.                                      { error ("Illegal character"); yyterminate();}
+.                                      { error ("Invalid symbol"); yyterminate();}
 
 %%
 
