@@ -1,3 +1,1 @@
-static class Test {
-    
-}
+class Test {}
