@@ -124,6 +124,7 @@ class MainWindow(QMainWindow):
         format_ = QTextCharFormat()
         format_.setForeground(color)
         cursor.mergeCharFormat(format_)
+
     def create_new_file(self):
         self.text_editor_title.setText("new File")
         self.text_edit.setText("")
