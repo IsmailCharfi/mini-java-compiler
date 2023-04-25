@@ -1,6 +1,6 @@
 from PyQt5.QtGui import QTextDocument, QFont, QColor, QTextCursor, QTextCharFormat
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDockWidget, QTextEdit, QWidget, QVBoxLayout, QMenu, QAction, \
-    QTreeView, QLabel, QFileDialog, QMessageBox, QShortcut
+    QTreeView, QLabel, QFileDialog, QMessageBox, QShortcut, QHBoxLayout, QSizePolicy
 from PyQt5.QtCore import QAbstractItemModel, QModelIndex, Qt, QDir
 import sys
 import os
@@ -17,18 +17,32 @@ class MainWindow(QMainWindow):
 
         # create the main text editor widget
         self.text_edit = QTextEdit(self)
+        self.line_numbers = QTextEdit(self)
+        self.line_numbers.setReadOnly(True)
+        self.line_numbers.setFixedWidth(30)
+        self.line_numbers.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self.text_edit_layout = QHBoxLayout()
+        self.text_edit_layout.addWidget(self.line_numbers, 1)
+        self.text_edit_layout.addWidget(self.text_edit)
+        widget = QWidget()
+        widget.setLayout(self.text_edit_layout)
         font = QFont("Monospace", 10)
         doc = QTextDocument()
         doc.setDefaultFont(font)
+        lines_doc = QTextDocument()
+        lines_doc.setDefaultFont(font)
         self.text_edit.setDocument(doc)
+        self.line_numbers.setDocument(lines_doc)
+        self.text_edit.textChanged.connect(self.update_line_numbers)
         self.highlighter = JavaHighlighter(self.text_edit.document())
         self.selected_file = None
         self.text_edit_dock = QDockWidget(self)
-        self.text_edit_dock.setWidget(self.text_edit)
+        self.text_edit_dock.setWidget(widget)
         self.text_editor_title = QLabel(self)
         self.text_editor_title.setText("new File")
         self.text_edit_dock.setTitleBarWidget(self.text_editor_title)
         self.setCentralWidget(self.text_edit_dock)
+        self.update_line_numbers()
 
         self.file_explorer = QTreeView(self)
         self.file_explorer_dock = QDockWidget(self)
@@ -153,6 +167,14 @@ class MainWindow(QMainWindow):
                 self.text_editor_title.setText(os.path.basename(file_path))
                 self.file_model = FileSystemTreeModel(self, self.opened_project)
                 self.file_explorer.setModel(self.file_model)
+
+    def update_line_numbers(self):
+        line_numbers = '1 \n'
+        input_lines = self.text_edit.toPlainText().split('\n')
+        for i in range(2, len(input_lines)+1):
+            line_numbers += str(i) + '\n'
+
+        self.line_numbers.setText(line_numbers)
 
 
 class FileSystemTreeModel(QAbstractItemModel):
