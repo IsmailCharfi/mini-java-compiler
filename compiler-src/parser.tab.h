@@ -135,8 +135,7 @@
      TERNARY_ELSE = 351,
      PLUS_PLUS = 352,
      MINUS_MINUS = 353,
-     NOT = 354,
-     SPREAD = 355
+     NOT = 354
    };
 #endif
 

@@ -129,8 +129,9 @@ class MainWindow(QMainWindow):
 
         result = subprocess.run(f"./compiler.exe {file_path}", stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         error = result.stderr.decode('utf-8')
+        success = result.stdout.decode('utf-8')
 
-        self.mini_terminal.setPlainText(error if error else "Compiled successfully")
+        self.mini_terminal.setPlainText(error if error else success)
         cursor = self.mini_terminal.textCursor()
         color = QColor('red' if error else "green")
         cursor.select(QTextCursor.Document)

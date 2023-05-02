@@ -1,11 +1,88 @@
 
 %{
 #include <stdio.h>	
+#include <string.h>
+#include <stdlib.h>
+#include "semantic.h"
+
+#define YYSTYPE char*
+#define MAX_STACK_SIZE 100
 
 int yylex(void);
 void yyerror(const char *msg);
 
 extern int line;
+
+int blockIdStack[MAX_STACK_SIZE] = {0};
+int idCounter = 0;
+int blockId = 0;
+int top = 0;
+int multipleLevelImport = 0;
+int inImports = 0;
+int usingThis = 0;
+int insideArgs = 0;
+int insideAssign = 0;
+
+void push(int id) {
+    if (top == MAX_STACK_SIZE - 1) {
+        printf("Stack overflow\n");
+        exit(1);
+    }
+    top++;
+    blockIdStack[top] = id;
+}
+
+int pop() {
+    if (top == -1) {
+        printf("Stack underflow\n");
+        exit(1);
+    }
+    top--;
+    return blockIdStack[top];
+}
+
+int peek() {
+    if (top == -1) {
+        printf("Stack is empty\n");
+        exit(1);
+    }
+    return blockIdStack[top];
+}
+
+Node* currentNode = NULL;
+Node* currentClass = NULL;
+Node* currentMethod = NULL;
+Node* methodCall = NULL;
+
+Node* methodsCallStack[MAX_STACK_SIZE];
+int methodIndex = 0;
+
+void pushMethod(Node* method) {
+    if (methodIndex == MAX_STACK_SIZE - 1) {
+        printf("Stack overflow\n");
+        exit(1);
+    }
+    methodIndex++;
+    methodsCallStack[methodIndex] = method;
+}
+
+Node* popMethod() {
+    if (methodIndex == -1) {
+        printf("Stack underflow\n");
+        exit(1);
+    }
+    methodIndex--;
+    return methodsCallStack[methodIndex];
+}
+
+Node* peekMethod() {
+    if (methodIndex == -1) {
+        printf("Stack is empty\n");
+        exit(1);
+    }
+    return methodsCallStack[methodIndex];
+}
+
 %}
 
 %error-verbose
@@ -109,65 +186,117 @@ extern int line;
 %token  PLUS_PLUS
 %token  MINUS_MINUS
 %token  NOT
-%token SPREAD
 
 %%
-QUALIFIED_IDENTIFIER:           IDENTIFIER 
-                                | QUALIFIED_IDENTIFIER DOT IDENTIFIER;
-
-QUALIFIED_IDENTIFIER_LIST:      QUALIFIED_IDENTIFIER 
-                                | QUALIFIED_IDENTIFIER_LIST COMMA QUALIFIED_IDENTIFIER;
+PROGRAM:                        PACKAGE_DECLARATION IMPORTS MAIN_CLASS PROGRAM_BODY {  printf("Compiled successfully"); printTab(); };
 
 PACKAGE_DECLARATION:            PACKAGE QUALIFIED_IDENTIFIER SEMICOLON
-                                |;
+                                |
+                                ;
 
 IMPORTS:                        SINGLE_IMPORT IMPORTS 
-                                |;
+                                |
+                                ;
 
-SINGLE_IMPORT:                  IMPORT QUALIFIED_IDENTIFIER SEMICOLON
-                                | IMPORT QUALIFIED_IDENTIFIER DOT TIMES SEMICOLON;
+SINGLE_IMPORT:                  IMPORT IMPORT_QUALIFIED_IDENTIFIER SEMICOLON;
 
-PROGRAM:                        PACKAGE_DECLARATION IMPORTS PROGRAM_BODY;
+IMPORT_QUALIFIED_IDENTIFIER:    IDENTIFIER  
+                                {
+                                    if (!multipleLevelImport) 
+                                    {
+                                        currentNode = insertSymbol($1, _IMPORT, -1, "UNKNOWN", _GLOBAL, blockId, NULL);
+                                    }
+                                    multipleLevelImport = 0;
+                                }
+                                | IMPORT_QUALIFIED_IDENTIFIER DOT IDENTIFIER
+                                {
+                                    multipleLevelImport = 1;
+                                    currentNode = insertSymbol($3, _IMPORT, -1, "UNKNOWN", _GLOBAL, blockId, NULL);
+                                }
+                                ;
+
+QUALIFIED_IDENTIFIER:           IDENTIFIER 
+                                | QUALIFIED_IDENTIFIER DOT IDENTIFIER
+                                ;
 
 PROGRAM_BODY:                   CLASSES PROGRAM_BODY
                                 | INTERFACES PROGRAM_BODY
                                 | ENUMS PROGRAM_BODY
                                 | CLASSES
-                                | INTERFACES
-                                | ENUMS;                    
+                                | INTERFACES 
+                                | ENUMS 
+                                ;                    
 
-CLASSES:                        SIMPLE_CLASS CLASSES 
-                                |;
+CLASSES:                        SIMPLE_CLASS CLASSES
+                                |
+                                ;
 
 INTERFACES:                     SIMPLE_INTERFACE INTERFACES 
-                                |;
+                                |
+                                ;
 
 ENUMS:                          SIMPLE_ENUM ENUMS 
-                                |;
+                                |
+                                ;
 
-SIMPLE_CLASS:                   CLASS_DECLARATION OPENBRAC CLASS_BODY CLOSEBRAC;
+SIMPLE_CLASS:                   CLASS_DECLARATION OPEN_NEW_BLOCK CLASS_BODY CLOSE_BLOCK;
 
-SIMPLE_INTERFACE:               INTERFACE_DECLARATION OPENBRAC INTERFACE_BODY CLOSEBRAC;
+MAIN_CLASS:                     CLASS_DECLARATION OPEN_NEW_BLOCK MAIN_CLASS_BODY CLOSE_BLOCK;
 
-SIMPLE_ENUM:                    ENUM_DECLARATION OPENBRAC ENUM_BODY CLOSEBRAC;
+SIMPLE_INTERFACE:               INTERFACE_DECLARATION OPEN_NEW_BLOCK INTERFACE_BODY CLOSE_BLOCK;
 
-CLASS_DECLARATION:              MODIFIER CLASS IDENTIFIER EXTENDING_PART IMPLEMENTING_PART
-                                | CLASS IDENTIFIER EXTENDING_PART IMPLEMENTING_PART;
+SIMPLE_ENUM:                    ENUM_DECLARATION OPEN_NEW_BLOCK ENUM_BODY CLOSE_BLOCK;
 
-INTERFACE_DECLARATION:          MODIFIER INTERFACE IDENTIFIER EXTENDING_PART
-                                | INTERFACE IDENTIFIER EXTENDING_PART;
+CLASS_DECLARATION:              MODIFIER CLASS IDENTIFIER CLASS_EXTENDING_PART IMPLEMENTING_PART 
+                                { 
+                                    checkClassDeclaration($3); 
+                                    currentClass = currentNode = insertSymbol($3, _DECLARATION, _CLASS, "UNKNOWN", _GLOBAL, blockId, NULL); 
+                                }
+                                | CLASS IDENTIFIER CLASS_EXTENDING_PART IMPLEMENTING_PART 
+                                { 
+                                    checkClassDeclaration($2); 
+                                    currentClass = currentNode = insertSymbol($2, _DECLARATION, _CLASS, "UNKNOWN", _GLOBAL, blockId, NULL); 
+                                }
+                                ;
 
-ENUM_DECLARATION:               MODIFIER ENUM IDENTIFIER IMPLEMENTING_PART
-                                | ENUM IDENTIFIER IMPLEMENTING_PART;    
+INTERFACE_DECLARATION:          MODIFIER INTERFACE IDENTIFIER INTERFACE_EXTENDING_PART 
+                                { 
+                                    checkInterfaceDeclaration($3); 
+                                    currentClass = currentNode = insertSymbol($3, _DECLARATION, _INTERFACE, "UNKNOWN", _GLOBAL, blockId, NULL);
+                                }
+                                | INTERFACE IDENTIFIER INTERFACE_EXTENDING_PART 
+                                {
+                                    checkInterfaceDeclaration($2); 
+                                    currentClass = currentNode = insertSymbol($2, _DECLARATION, _INTERFACE, "UNKNOWN", _GLOBAL, blockId, NULL);
+                                }
+                                ;
 
-EXTENDING_PART:                 EXTENDS IDENTIFIER
-                                | ;
+ENUM_DECLARATION:               MODIFIER ENUM IDENTIFIER IMPLEMENTING_PART 
+                                {
+                                    checkEnumDeclaration($3); 
+                                    currentClass = currentNode = insertSymbol($3, _DECLARATION, _ENUM, "UNKNOWN", _GLOBAL, blockId, NULL);
+                                }
+                                | ENUM IDENTIFIER IMPLEMENTING_PART 
+                                {
+                                    checkEnumDeclaration($2); 
+                                    currentClass = currentNode = insertSymbol($2, _DECLARATION, _ENUM, "UNKNOWN", _GLOBAL, blockId, NULL);
+                                };   
+
+CLASS_EXTENDING_PART:           EXTENDS IDENTIFIER { checkClassExistance($2); }
+                                | 
+                                ;
+
+INTERFACE_EXTENDING_PART:       EXTENDS IDENTIFIER { checkInterfaceExistance($2); }
+                                | 
+                                ;  
 
 IMPLEMENTING_PART:              IMPLEMENTS IMPLEMENTED_LIST
-                                | ;
+                                | 
+                                ;
 
-IMPLEMENTED_LIST:               IDENTIFIER 
-                                | IMPLEMENTED_LIST COMMA IDENTIFIER;
+IMPLEMENTED_LIST:               IDENTIFIER  { checkInterfaceExistance($1); }
+                                | IMPLEMENTED_LIST COMMA IDENTIFIER { checkInterfaceExistance($3); }
+                                ;
 
 MODIFIER:                       PUBLIC
                                 | PRIVATE
@@ -179,111 +308,189 @@ MODIFIER:                       PUBLIC
                                 | SYNCHRONIZED
                                 | TRANSIENT
                                 | VOLATILE
-                                | STRICTFP;
+                                | STRICTFP
+                                ;
 
 MODIFIERS:                      MODIFIER MODIFIERS
                                 | MODIFIER
-                                |;
+                                |
+                                ;
 
 CLASS_BODY:                     CLASS_BODY_MEMBER
                                 | CLASS_BODY_MEMBER CLASS_BODY
-                                |;
+                                |
+                                ;
+
+MAIN_CLASS_BODY:                CLASS_BODY_MEMBER MAIN_CLASS_BODY
+                                | MAIN_METHOD
+                                ;
+
+MAIN_METHOD:                    PUBLIC STATIC VOID MAIN OPENPARENT STRING OPENSQRBRACK CLOSESQRBRACK IDENTIFIER CLOSEPARENT OPEN_NEW_BLOCK BLOCK CLOSE_BLOCK;
 
 INTERFACE_BODY:                 INTERFACE_BODY_MEMBER
                                 | INTERFACE_BODY_MEMBER INTERFACE_BODY
-                                |;
+                                |
+                                ;
 
 ENUM_BODY:                      ENUM_BODY_MEMBER
                                 | ENUM_BODY_MEMBER ENUM_BODY
-                                |;
+                                |
+                                ;
 
 
 CLASS_BODY_MEMBER:              MODIFIERS METHOD_DECLARATOR
                                 | MODIFIERS FIELD_DECLARATOR
-                                | MODIFIERS CONSTRUCTOR;
+                                | MODIFIERS CONSTRUCTOR
+                                ;
 
 INTERFACE_BODY_MEMBER:          TYPE IDENTIFIER FORMARL_PARAMETERS THROWING_PART SEMICOLON
                                 | VOID IDENTIFIER FORMARL_PARAMETERS THROWING_PART SEMICOLON
-                                | IDENTIFIER FORMARL_PARAMETERS THROWING_PART SEMICOLON;
+                                | IDENTIFIER FORMARL_PARAMETERS THROWING_PART SEMICOLON
+                                ;
 
 ENUM_BODY_MEMBER:               ENUM_CONSTANTS SEMICOLON CLASS_BODY
-                                | ENUM_CONSTANTS;
+                                | ENUM_CONSTANTS
+                                ;
 
 
 ENUM_CONSTANTS:                 ENUM_CONSTANT
-                                | ENUM_CONSTANTS COMMA ENUM_CONSTANT;
+                                | ENUM_CONSTANTS COMMA ENUM_CONSTANT
+                                ;
 
 ENUM_CONSTANT:                  IDENTIFIER ARGUMENTS CLASS_BODY
-                                | IDENTIFIER CLASS_BODY;
+                                | IDENTIFIER CLASS_BODY
+                                ;
 
-METHOD_DECLARATOR:              TYPE IDENTIFIER METHOD_DECLARATOR_REST
-                                | VOID IDENTIFIER METHOD_DECLARATOR_REST
-                                | VOID MAIN METHOD_DECLARATOR_REST;
+METHOD_DECLARATOR:              METHOD_DECLARATOR_HEAD METHOD_DECLARATOR_REST;
 
-FIELD_DECLARATOR:               TYPE IDENTIFIER FIELD_DECLARATOR_REST;
+METHOD_DECLARATOR_HEAD:         TYPE IDENTIFIER
+                                {
+                                    currentMethod = currentNode = insertSymbol($2, _DECLARATION, _METHOD, $1, _GLOBAL, blockId, currentClass->name);
+                                }
+                                | VOID IDENTIFIER
+                                {
+                                    currentMethod = currentNode = insertSymbol($2, _DECLARATION, _METHOD, $1, _GLOBAL, blockId, currentClass->name);
+                                }
+                                ;
 
-FIELD_DECLARATOR_REST:          VARIABLE_DECLARATOR_REST SEMICOLON
-                                | VARIABLE_DECLARATOR_REST COMMA VARIABLE_DECLARATOR_LIST SEMICOLON;
+FIELD_DECLARATOR:               FIELD_DECLARATOR_HEAD INIT_ASSIGN VARIABLE_INITIALIZER END_INIT
+                                | FIELD_DECLARATOR_HEAD END_INIT
+                                ;
 
-VARIABLE_DECLARATOR_REST:       ARRAY_BRACKETS ASSIGN_VARIABLE_INIT
-                                | ARRAY_BRACKETS
-                                | ASSIGN_VARIABLE_INIT
-                                | ;
+END_INIT:                       SEMICOLON
+                                {
+                                    insideAssign = 0;
+                                }
+                                ;
 
-VARIABLE_DECLARATOR_LIST:       VARIABLE_DECLARATOR 
-                                | VARIABLE_DECLARATOR COMMA VARIABLE_DECLARATOR_LIST;
+INIT_ASSIGN:                    ASSIGN 
+                                {
+                                    insideAssign = 1;
+                                }
+                                ;
 
-VARIABLE_DECLARATOR:            IDENTIFIER  VARIABLE_DECLARATOR_REST;
+FIELD_DECLARATOR_HEAD:          TYPE IDENTIFIER 
+                                {
+                                    checkVariableDeclaration($2, _GLOBAL, blockId);
+                                    currentNode = insertSymbol($2, _DECLARATION, _VARIABLE, $1, _GLOBAL, blockId, currentClass->name); 
+                                }
+                                ;
 
-METHOD_DECLARATOR_REST:         FORMARL_PARAMETERS THROWING_PART OPENBRAC BLOCK CLOSEBRAC
-                                | FORMARL_PARAMETERS THROWING_PART SEMICOLON;
 
-CONSTRUCTOR:                    IDENTIFIER FORMARL_PARAMETERS THROWING_PART OPENBRAC BLOCK CLOSEBRAC;
+VARIABLE_DECLARATOR:            VARIABLE_DECLARATOR_HEAD INIT_ASSIGN VARIABLE_INITIALIZER END_INIT
+                                | VARIABLE_DECLARATOR_HEAD END_INIT
+                                ;
 
-THROWING_PART:                  THROWS QUALIFIED_IDENTIFIER_LIST
-                                |;
+VARIABLE_DECLARATOR_HEAD:       TYPE IDENTIFIER
+                                {
+                                    checkVariableDeclaration($2, _LOCAL, blockId);
+                                    currentNode = insertSymbol($2, _DECLARATION, _VARIABLE, $1, _LOCAL, blockId, NULL); 
+                                }
+                                ;
+
+METHOD_DECLARATOR_REST:         FORMARL_PARAMETERS THROWING_PART OPEN_NEW_BLOCK BLOCK CLOSE_BLOCK 
+                                { 
+                                    checkMethodDeclaration(currentMethod->name, currentMethod->blockId);
+                                }
+                                | FORMARL_PARAMETERS THROWING_PART SEMICOLON 
+                                { 
+                                    checkMethodDeclaration(currentMethod->name, currentMethod->blockId); 
+                                }
+                                ;
+
+CONSTRUCTOR:                    IDENTIFIER FORMARL_PARAMETERS THROWING_PART OPEN_NEW_BLOCK BLOCK CLOSE_BLOCK
+                                {
+                                    currentMethod = currentNode = insertSymbol($1, _DECLARATION, _CONSTRUCTOR, "void", _GLOBAL, blockId, currentClass->name); 
+                                    checkConstructorName($1, currentClass->name);
+                                    checkMethodDeclaration(currentMethod->name, currentMethod->blockId);
+                                }
+                                ;
+
+THROWING_PART:                  THROWS EXCEPTIONS_LIST
+                                |
+                                ;
+
+EXCEPTIONS_LIST:                QUALIFIED_EXCEPTION 
+                                | EXCEPTIONS_LIST COMMA QUALIFIED_EXCEPTION
+                                ;
+
+QUALIFIED_EXCEPTION:            IDENTIFIER  { checkClassExistance($1); }
+                                | QUALIFIED_EXCEPTION DOT IDENTIFIER { checkClassExistance($3); }
+                                ;
 
 ARRAY_BRACKETS:                 OPENSQRBRACK CLOSESQRBRACK 
-                                | OPENSQRBRACK CLOSESQRBRACK ARRAY_BRACKETS;
+                                {
+                                    strcpy($$, "[]");
+                                }
+                                | OPENSQRBRACK CLOSESQRBRACK ARRAY_BRACKETS 
+                                {
+                                    strcpy($$, "["); strcat($$, "]"); 
+                                    strcat($$, $3);
+                                }
+                                ;
 
-ASSIGN_VARIABLE_INIT:           ASSIGN VARIABLE_INITIALIZER;
 
 VARIABLE_INITIALIZER:           ARRAY_INITIALIZER 
-                                | EXPRESSION;
+                                | EXPRESSION
+                                ;
 
 ARRAY_INITIALIZER:              OPENBRAC VARIABLE_INITIALIZER_LIST CLOSEBRAC;
 
 VARIABLE_INITIALIZER_LIST:      VARIABLE_INITIALIZER
                                 | VARIABLE_INITIALIZER COMMA VARIABLE_INITIALIZER_LIST
-                                |;
+                                |
+                                ;
 
-FORMARL_PARAMETERS:             OPENPARENT FORMARL_PARAMETER CLOSEPARENT;
+FORMARL_PARAMETERS:             OPENPARENT FORMARL_PARAMETER CLOSEPARENT
+                                | OPENPARENT CLOSEPARENT
+                                ;
 
-FORMARL_PARAMETER:              TYPE FORMARL_PARAMETER_REST
-                                |;
+FORMARL_PARAMETER:              FORMARL_PARAMETER_HEAD FORMARL_PARAMETER_REST; 
 
-FORMARL_PARAMETER_REST:         SPREAD VARIABLE_DECLARATOR_ID
-                                | VARIABLE_DECLARATOR_ID
-                                | VARIABLE_DECLARATOR_ID COMMA FORMARL_PARAMETER;
+FORMARL_PARAMETER_HEAD:         TYPE IDENTIFIER { addMethodArg(currentMethod, $2, $1); };
 
-VARIABLE_DECLARATOR_ID:         IDENTIFIER ARRAY_BRACKETS
-                                | IDENTIFIER;
+FORMARL_PARAMETER_REST:         COMMA FORMARL_PARAMETER
+                                |
+                                ;
 
 EXPRESSION:                     EXPRESSION1 ASSIGNMENT_OPERATOR EXPRESSION1
-                                | EXPRESSION1;
+                                | EXPRESSION1
+                                ;
 
 EXPRESSION1:                    EXPRESSION2 TERNARY_IF EXPRESSION TERNARY_ELSE EXPRESSION1
-                                | EXPRESSION2;
+                                | EXPRESSION2
+                                ;
 
 EXPRESSION2:                    EXPRESSION3
                                 | EXPRESSION3 INFIX_OPERATIONS
-                                | EXPRESSION3 INSTANCEOF TYPE;
+                                | EXPRESSION3 INSTANCEOF TYPE { checkClassExistance($3); }
+                                ;
 
 EXPRESSION3:                    PREFIX_OP EXPRESSION3
                                 | PAR_EXPRESSION EXPRESSION3
-                                | OPENPARENT TYPE CLOSEPARENT EXPRESSION3
                                 | EXPRESSION3 OPENSQRBRACK EXPRESSION CLOSESQRBRACK
-                                | PRIMARY SELECTORS POSTFIX_OPERATORS;
+                                | PRIMARY SELECTORS POSTFIX_OPERATORS
+                                ;
 
 ASSIGNMENT_OPERATOR:            ASSIGN
                                 | PLUS_ASSIGN
@@ -293,10 +500,12 @@ ASSIGNMENT_OPERATOR:            ASSIGN
                                 | MODULO_ASSIGN
                                 | BITWISE_AND_ASSIGN
                                 | BITWISE_OR_ASSIGN
-                                | XOR_ASSIGN;
+                                | XOR_ASSIGN
+                                ;
 
 INFIX_OPERATIONS:               INFIX_OP EXPRESSION3
-                                | INFIX_OP EXPRESSION3 INFIX_OPERATIONS;
+                                | INFIX_OP EXPRESSION3 INFIX_OPERATIONS
+                                ;
 
 INFIX_OP:                       OR
                                 | AND
@@ -313,134 +522,245 @@ INFIX_OP:                       OR
                                 | MINUS
                                 | TIMES
                                 | DIVIDE
-                                | MODULO;
+                                | MODULO
+                                ;
 
 PREFIX_OP:                      PLUS_PLUS
                                 | MINUS_MINUS
                                 | NOT
                                 | PLUS
-                                | MINUS;
+                                | MINUS
+                                ;
 
 POSTFIX_OP:                     PLUS_PLUS
-                                | MINUS_MINUS;
+                                | MINUS_MINUS
+                                ;
 
-SELECTORS:                      SELECTOR 
-                                | SELECTOR SELECTORS
-                                |;
+SELECTORS:                      SELECTOR SELECTORS
+                                |
+                                ;
 
 POSTFIX_OPERATORS:              POSTFIX_OP 
                                 | POSTFIX_OP POSTFIX_OPERATORS
-                                |;
+                                |
+                                ;
 
-PRIMARY:                        LITERAL 
+PRIMARY:                        LITERAL
                                 | PAR_EXPRESSION
-                                | THIS
-                                | THIS SUPER_SUFFIX
-                                | SUPER SUPER_SUFFIX
-                                | NEW IDENTIFIER_SEQUENCE ARGUMENTS
-                                | IDENTIFIER_SEQUENCE
-                                | IDENTIFIER_SEQUENCE IDENTIFER_SUFFIX;
+                                | THIS { usingThis = 1; }
+                                | SUPER
+                                | BEGIN_INSTANCIATION ARGUMENTS 
+                                | IDENTIFIER 
+                                { 
+                                    checkVariableExistance($1, _LOCAL, blockId, 1);
+                                    if (insideArgs)
+                                    {
+                                        insertCallArg(methodCall, $1, NULL);
+                                    }
+                                }
+                                ;
 
-IDENTIFIER_SEQUENCE:            IDENTIFIER DOT IDENTIFIER_SEQUENCE
-                                | IDENTIFIER;
+BEGIN_INSTANCIATION:            NEW IDENTIFIER
+                                {
+                                   checkClassExistance($2);
+                                    if (insideArgs)
+                                    {
+                                        insertCallArg(methodCall, NULL, $2);
+                                    } 
+                                    if (insideAssign)
+                                    {
+                                        checkVariableInitType(currentNode, $2);
+                                    }
+                                    methodCall = insertSymbol($2, _CALL, _CONSTRUCTOR, $2, _LOCAL, blockId, currentClass->name);
+                                    pushMethod(methodCall);
+                                }
+                                ;
 
 LITERAL:                        NUMBER
+                                {
+                                    if (insideArgs) 
+                                    {
+                                        insertCallArg(methodCall, NULL, "NUMBER");
+                                    }
+                                    else if (insideAssign)
+                                    {
+                                        checkVariableInitType(currentNode, "NUMBER");
+                                    }
+                                }
                                 | TYPED_STRING
+                                {
+                                    if (insideArgs) 
+                                    {
+                                        insertCallArg(methodCall, NULL, "String");
+                                    }
+                                    else if (insideAssign)
+                                    {
+                                        checkVariableInitType(currentNode, "String");
+                                    }
+                                }
                                 | TRUE
+                                {
+                                    if (insideArgs) 
+                                    {
+                                       insertCallArg(methodCall, NULL, "TRUE");
+                                    }
+                                    else if (insideAssign)
+                                    {
+                                        checkVariableInitType(currentNode, "TRUE");
+                                    }
+                                }
                                 | FALSE
-                                | NULL_;
+                                {
+                                    if (insideArgs) 
+                                    {
+                                       insertCallArg(methodCall, NULL, "FALSE");
+                                    }
+                                    else if (insideAssign)
+                                    {
+                                        checkVariableInitType(currentNode, "FALSE");
+                                    }
+                                }
+                                | NULL_
+                                {
+                                    if (insideArgs) 
+                                    {
+                                        insertCallArg(methodCall, NULL, "NULL_");
+                                    }
+                                    if (insideAssign)
+                                    {
+                                        checkVariableInitType(currentNode, "NULL_");
+                                    }
+                                }
+                                ;
 
 PAR_EXPRESSION:                 OPENPARENT EXPRESSION CLOSEPARENT;
 
-ARGUMENTS:                      OPENPARENT EXPRESSION_LIST CLOSEPARENT;
+ARGUMENTS:                      OPEN_ARGS_PARENT EXPRESSION_LIST CLOSE_ARGS_PARENT
+                                | OPENPARENT CLOSE_ARGS_PARENT
+                                ;
 
-EXPRESSION_LIST:                EXPRESSION 
-                                | EXPRESSION COMMA EXPRESSION_LIST
-                                |;
+OPEN_ARGS_PARENT:               OPENPARENT { insideArgs = 1; };
 
-SUPER_SUFFIX:                   ARGUMENTS
-                                | DOT IDENTIFIER
-                                | DOT IDENTIFIER ARGUMENTS;
+CLOSE_ARGS_PARENT:              CLOSEPARENT 
+                                { 
+                                    insideArgs = 0; 
+                                    checkMissingArgs(methodCall, currentClass->name);
+                                    popMethod();
+                                    methodCall = peekMethod(); 
+                                };
 
-IDENTIFER_SUFFIX:               EXPRESSION
-                                | ARGUMENTS
-                                | POSTFIX_OP;
+EXPRESSION_LIST:                EXPRESSION
+                                | EXPRESSION COMMA EXPRESSION_LIST  
+                                |
+                                ;
 
+SELECTOR:                       METHOD_SELECTOR ARGUMENTS 
+                                | DOT IDENTIFIER 
+                                { 
+                                    if (usingThis) 
+                                    {  
+                                        checkFieldExistanceInClass($2, currentClass->name);
+                                        usingThis = 0; 
+                                    }
+                                }
+                                ;
 
-SELECTOR:                       DOT IDENTIFIER ARGUMENTS
-                                | DOT IDENTIFIER;
+METHOD_SELECTOR:                DOT IDENTIFIER
+                                {
+                                    if (usingThis) 
+                                    { 
+                                        checkMethodExistanceInClass($2, currentClass->name); 
+                                        methodCall = currentNode = insertSymbol($2, _CALL, _METHOD, "unknown", _LOCAL, blockId, currentClass->name);
+                                        pushMethod(methodCall);
+                                        usingThis = 0; 
+                                    } 
+                                }
+                                ;
 
 BLOCK:                          BLOCK_STATEMENT 
                                 | BLOCK BLOCK_STATEMENT
-                                |;
+                                |
+                                ;
 
-BLOCK_STATEMENT:                LOCAL_VARIABLE_DECLARATION_STATEMENT
-                                | STATEMENT;
+BLOCK_STATEMENT:                VARIABLE_DECLARATOR
+                                | STATEMENT
+                                ;
 
-                
-
-LOCAL_VARIABLE_DECLARATION_STATEMENT:  TYPE VARIABLE_DECLARATOR_LIST SEMICOLON;
-
-STATEMENT:                      OPENBRAC BLOCK CLOSEBRAC
-                                | SEMICOLON
+STATEMENT:                      OPEN_NEW_BLOCK BLOCK CLOSE_BLOCK
                                 | EXPRESSION SEMICOLON
+                                | IF PAR_EXPRESSION SEMICOLON
                                 | IF PAR_EXPRESSION STATEMENT
                                 | IF PAR_EXPRESSION STATEMENT ELSE STATEMENT
                                 | FOR OPENPARENT FOR_CONTROL CLOSEPARENT STATEMENT
+                                | FOR OPENPARENT FOR_CONTROL CLOSEPARENT SEMICOLON
                                 | WHILE PAR_EXPRESSION STATEMENT
+                                | WHILE PAR_EXPRESSION SEMICOLON
                                 | BREAK SEMICOLON
-                                | BREAK IDENTIFIER SEMICOLON
-                                | CONTINUE IDENTIFIER SEMICOLON
                                 | CONTINUE SEMICOLON
                                 | SWITCH PAR_EXPRESSION OPENBRAC SWITCH_BLOCK_STATEMENT_GROUPS CLOSEBRAC
                                 | DO STATEMENT WHILE PAR_EXPRESSION SEMICOLON
                                 | RETURN SEMICOLON
                                 | RETURN EXPRESSION SEMICOLON
                                 | THROW EXPRESSION SEMICOLON
-                                | SYNCHRONIZED PAR_EXPRESSION OPENBRAC BLOCK CLOSEBRAC
-                                | TRY OPENBRAC BLOCK CLOSEBRAC CATCHES FINALLY_BLOCK
-                                | TRY OPENBRAC BLOCK CLOSEBRAC FINALLY_BLOCK
-                                | TRY OPENBRAC BLOCK CLOSEBRAC CATCHES;
+                                | SYNCHRONIZED PAR_EXPRESSION OPEN_NEW_BLOCK BLOCK CLOSE_BLOCK
+                                | TRY OPEN_NEW_BLOCK BLOCK CLOSE_BLOCK CATCHES FINALLY_BLOCK
+                                | TRY OPEN_NEW_BLOCK BLOCK CLOSE_BLOCK FINALLY_BLOCK
+                                | TRY OPEN_NEW_BLOCK BLOCK CLOSE_BLOCK CATCHES
+                                ;
+
+OPEN_NEW_BLOCK:                 OPENBRAC  { idCounter++; blockId = idCounter; push(blockId);};
+
+CLOSE_BLOCK:                    CLOSEBRAC { pop(); blockId = peek();};
 
 CATCHES:                        CATCH_CLAUSE 
-                                | CATCH_CLAUSE CATCHES;
+                                | CATCH_CLAUSE CATCHES
+                                ;
 
-CATCH_CLAUSE:                   CATCH OPENPARENT CATCH_TYPE IDENTIFIER CLOSEPARENT OPENBRAC BLOCK CLOSEBRAC;
+CATCH_CLAUSE:                   CATCH OPENPARENT CATCH_TYPE IDENTIFIER CLOSEPARENT OPEN_NEW_BLOCK BLOCK CLOSEBRAC;
 
-CATCH_TYPE:                     QUALIFIED_IDENTIFIER 
-                                | CATCH_TYPE BITWISE_OR QUALIFIED_IDENTIFIER;
+CATCH_TYPE:                     IDENTIFIER { checkClassExistance($1); }
+                                | CATCH_TYPE BITWISE_OR IDENTIFIER { checkClassExistance($3); }
+                                ;
 
-FINALLY_BLOCK:                  FINALLY OPENBRAC BLOCK CLOSEBRAC;
+FINALLY_BLOCK:                  FINALLY OPEN_NEW_BLOCK BLOCK CLOSE_BLOCK;
 
 SWITCH_BLOCK_STATEMENT_GROUPS:  SWITCH_BLOCK_STATEMENT_GROUP 
-                                | SWITCH_BLOCK_STATEMENT_GROUPS SWITCH_BLOCK_STATEMENT_GROUP;
+                                | SWITCH_BLOCK_STATEMENT_GROUPS SWITCH_BLOCK_STATEMENT_GROUP
+                                ;
 
-SWITCH_BLOCK_STATEMENT_GROUP:   SWITCH_LABELS OPENBRAC BLOCK CLOSEBRAC;
+SWITCH_BLOCK_STATEMENT_GROUP:   SWITCH_LABELS OPEN_NEW_BLOCK BLOCK CLOSE_BLOCK;
 
 SWITCH_LABELS:                  SWITCH_LABEL 
-                                | SWITCH_LABEL SWITCH_LABELS;
+                                | SWITCH_LABEL SWITCH_LABELS
+                                ;
 
 SWITCH_LABEL:                   CASE EXPRESSION TERNARY_ELSE
-                                | CASE IDENTIFIER TERNARY_ELSE
-                                | DEFAULT TERNARY_ELSE;
+                                | CASE IDENTIFIER TERNARY_ELSE { CheckVariableExistanceQuitIfNotExists($2, _LOCAL, blockId); }
+                                | DEFAULT TERNARY_ELSE
+                                ;
 
 FOR_CONTROL:                    FOR_VAR_CONTROL
                                 | EXPRESSION_LIST SEMICOLON EXPRESSION SEMICOLON EXPRESSION_LIST
-                                | EXPRESSION_LIST SEMICOLON SEMICOLON EXPRESSION_LIST;
+                                | EXPRESSION_LIST SEMICOLON SEMICOLON EXPRESSION_LIST
+                                ;
 
-FOR_VAR_CONTROL:                TYPE VARIABLE_DECLARATOR_ID FOR_VAR_CONTROL_REST;
+FOR_VAR_CONTROL:                FOR_VAR_CONTROL_HEAD FOR_VAR_CONTROL_REST;
 
-FOR_VAR_CONTROL_REST:           FOR_VARIABLE_DECLARATORS_REST SEMICOLON EXPRESSION SEMICOLON EXPRESSION_LIST
-                                | FOR_VARIABLE_DECLARATORS_REST SEMICOLON SEMICOLON EXPRESSION_LIST
-                                | TERNARY_ELSE EXPRESSION;
+FOR_VAR_CONTROL_HEAD:           TYPE IDENTIFIER ASSIGN VARIABLE_INITIALIZER
+                                {
+                                   currentNode = insertSymbol($2, _VARIABLE, _DECLARATION, $1, _LOCAL, blockId, "FOR");     
+                                }
+                                ;
 
-FOR_VARIABLE_DECLARATORS_REST:  ASSIGN VARIABLE_INITIALIZER 
-                                | ASSIGN VARIABLE_INITIALIZER COMMA VARIABLE_DECLARATOR_LIST
-                                | ;
+FOR_VAR_CONTROL_REST:            SEMICOLON EXPRESSION SEMICOLON EXPRESSION_LIST
+                                |  SEMICOLON SEMICOLON EXPRESSION_LIST
+                                ;
+
 
 TYPE:                           BASIC_TYPE 
-                                | REFERENCE_TYPE;
-                                | TYPE ARRAY_BRACKETS;
+                                | IDENTIFIER { checkClassExistance($1) }
+                                | TYPE ARRAY_BRACKETS {strcat($$, $2);}
+                                ;
 
 BASIC_TYPE:                     BYTE
                                 | SHORT
@@ -450,10 +770,8 @@ BASIC_TYPE:                     BYTE
                                 | FLOAT
                                 | DOUBLE
                                 | STRING
-                                | BOOLEAN;
-
-REFERENCE_TYPE:                 IDENTIFIER
-                                | REFERENCE_TYPE DOT IDENTIFIER;
+                                | BOOLEAN
+                                ;
 %%
 
 extern FILE *yyin;
